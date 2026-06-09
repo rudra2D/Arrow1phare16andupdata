@@ -1,35 +1,111 @@
 """Telegram bot remote control for Arrow."""
 
+import os
+import platform
+import subprocess
 import threading
 import time
 from typing import Any
 
 import requests
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_USER_ID
+from config import ADMIN_CHAT_ID, TELEGRAM_BOT_TOKEN, TELEGRAM_USER_ID
 from btu import query_gemini_with_image
-from modules.browser_control import play_youtube
-from modules.camera import capture_live_desk_snapshot
-from modules.memory import remember_memory, remember_visual_objects, summarize_user_profile
-from modules.pc_control import get_system_status, open_app, press_shortcut, take_screenshot
+from modules.memory import (
+    get_dynamic_command_count,
+    get_memory_db_path,
+    initialize_memory_store,
+    remember_memory,
+    remember_visual_objects,
+    summarize_user_profile,
+)
+from modules.orchestrator import get_orchestrator
+from modules.security import get_security_manager
 from voice_out import speak
 
 API_BASE = "https://api.telegram.org"
 
+ORCHESTRATOR_PLUGIN = {
+    "name": "telegram",
+    "handler": "orchestrator_event_hook",
+    "events": ("*",),
+    "priority": 10,
+}
 
-class TelegramRemoteBot:
+
+def orchestrator_event_hook(event_type: str, payload: dict) -> dict:
+    """Notify the Telegram remote interface when the orchestrator emits an event."""
+    try:
+        engine = SmartRemoteEngine()
+        if engine.admin_chat_id and engine.token and engine.token != "YOUR_TELEGRAM_BOT_TOKEN":
+            engine._send_message(engine.admin_chat_id, f"Arrow orchestrator event: {event_type}")
+            return {"status": "notified", "event_type": event_type}
+    except Exception as exc:
+        return {"status": "skipped", "error": str(exc)}
+    return {"status": "not-configured", "event_type": event_type}
+
+
+def build_dashboard_report() -> str:
+    """Compile a Phase 7 dashboard summary for the admin chat."""
+    orchestrator = get_orchestrator()
+    phase_status = "ready" if orchestrator.start().get("ready") else "paused"
+    plugin_names = sorted(getattr(orchestrator, "_plugins", {}).keys()) or ["none"]
+    dynamic_commands = get_dynamic_command_count()
+    db_path = get_memory_db_path()
+    encryption_health = "ok" if db_path.exists() else "missing"
+
+    lines = [
+        "Arrow Smart Dashboard",
+        "- Active phases: " + ", ".join(plugin_names),
+        "- Phase 14 orchestration: " + phase_status,
+        "- Encryption health: " + encryption_health,
+        "- Phase 15 dynamic commands: " + str(dynamic_commands),
+        "- Memory database: " + str(db_path),
+    ]
+    return "\n".join(lines)
+
+
+def send_dashboard_report(chat_id: int | None = None) -> dict:
+    """Send the dashboard summary to the configured admin chat and/or the requesting chat."""
+    report = build_dashboard_report()
+    engine = SmartRemoteEngine()
+
+    if not engine.token or engine.token == "YOUR_TELEGRAM_BOT_TOKEN":
+        return {"status": "not-configured", "report": report, "sent_to": []}
+
+    targets = []
+    if chat_id is not None:
+        targets.append(int(chat_id))
+    if engine.admin_chat_id:
+        targets.append(int(engine.admin_chat_id))
+
+    unique_targets = list(dict.fromkeys(targets))
+    for target in unique_targets:
+        engine._send_message(target, report)
+
+    return {"status": "sent", "report": report, "sent_to": unique_targets}
+
+
+class SmartRemoteEngine:
     def __init__(self) -> None:
         self.token = TELEGRAM_BOT_TOKEN
-        self.allowed_user_id = TELEGRAM_USER_ID
+        self.admin_chat_id = ADMIN_CHAT_ID or TELEGRAM_USER_ID
         self.offset = None
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
+        self.started = False
 
     def _build_url(self, method: str) -> str:
         return f"{API_BASE}/bot{self.token}/{method}"
 
-    def _authorized(self, user_id: int) -> bool:
-        return self.allowed_user_id and user_id == self.allowed_user_id
+    def _authorized(self, user_id: int | None, chat_id: int | None) -> bool:
+        if not self.admin_chat_id:
+            return False
+        if chat_id is not None and chat_id == self.admin_chat_id:
+            return True
+        if user_id is not None and user_id == self.admin_chat_id:
+            return True
+        return False
 
     def _get_updates(self) -> list[dict[str, Any]]:
         if not self.token or self.token == "YOUR_TELEGRAM_BOT_TOKEN":
@@ -73,16 +149,57 @@ class TelegramRemoteBot:
         if user_id is None or chat_id is None or not text:
             return
 
-        if not self._authorized(user_id):
+        if not self._authorized(user_id, chat_id):
             return
 
+        security_manager = get_security_manager()
+        security_manager.mark_activity("telegram")
+
         lower_text = text.lower().strip()
+
+        if lower_text == "/panic":
+            result = security_manager.trigger_panic("telegram panic command")
+            self._send_message(chat_id, result["message"])
+            return
+
+        if lower_text.startswith("/unlock "):
+            pin = text[len("/unlock "):].strip()
+            if security_manager.unlock(pin):
+                self._send_message(chat_id, "Security lock released. Arrow is ready to resume.")
+            else:
+                self._send_message(chat_id, "Incorrect PIN. Arrow remains locked.")
+            return
+
+        if security_manager.is_locked():
+            security_manager.record_intrusion_attempt(text)
+            self._send_message(chat_id, "Arrow is locked for security. Send /unlock <PIN> to resume.")
+            return
+
+        if lower_text == "/dashboard":
+            report = build_dashboard_report()
+            self._send_message(chat_id, report)
+            send_dashboard_report(chat_id=chat_id)
+            return
+
         if lower_text == "/screenshot":
+            from modules.pc_control import take_screenshot
+
             screenshot_path = take_screenshot()
             self._send_photo(chat_id, screenshot_path, caption="Arrow screenshot")
         elif lower_text == "/status":
-            status = get_system_status()
-            self._send_message(chat_id, status)
+            self._send_message(chat_id, self.get_status())
+        elif lower_text == "/shutdown_pc":
+            result = self._run_windows_system_command("shutdown", ["/s", "/t", "10"])
+            if result:
+                self._send_message(chat_id, "Windows shutdown scheduled in 10 seconds.")
+            else:
+                self._send_message(chat_id, "Shutdown command is only available on Windows or the command failed.")
+        elif lower_text == "/restart_pc":
+            result = self._run_windows_system_command("shutdown", ["/r", "/t", "10"])
+            if result:
+                self._send_message(chat_id, "Windows restart scheduled in 10 seconds.")
+            else:
+                self._send_message(chat_id, "Restart command is only available on Windows or the command failed.")
         elif lower_text.startswith("/say "):
             message = text[5:].strip()
             if message:
@@ -91,24 +208,32 @@ class TelegramRemoteBot:
             else:
                 self._send_message(chat_id, "Please provide text after /say.")
         elif lower_text.startswith("/open "):
+            from modules.pc_control import open_app
+
             target = text[6:].strip()
             if target and open_app(target):
                 self._send_message(chat_id, f"Opening {target}.")
             else:
                 self._send_message(chat_id, f"I could not open {target}.")
         elif lower_text.startswith("/play "):
+            from modules.browser_control import play_youtube
+
             query = text[6:].strip()
             if query and play_youtube(query):
                 self._send_message(chat_id, f"Playing {query} on YouTube.")
             else:
                 self._send_message(chat_id, "I could not play that YouTube query.")
         elif lower_text.startswith("/press "):
+            from modules.pc_control import press_shortcut
+
             shortcut = text[7:].strip()
             if shortcut and press_shortcut(shortcut):
                 self._send_message(chat_id, f"Pressed shortcut: {shortcut}")
             else:
                 self._send_message(chat_id, "I could not recognize that shortcut command.")
         elif lower_text in {"/desk", "/scan", "/camera", "/desk scan", "/scan desk"}:
+            from modules.camera import capture_live_desk_snapshot
+
             camera_result = capture_live_desk_snapshot()
             if not camera_result:
                 self._send_message(chat_id, "I could not capture the live camera snapshot. Check the RTSP URL and camera connection.")
@@ -128,15 +253,20 @@ class TelegramRemoteBot:
             self._send_message(chat_id, profile_summary)
         elif lower_text == "/help":
             help_msg = (
-                "Arrow remote commands:\n"
+                "Arrow Smart Remote Engine commands:\n"
                 "/screenshot - take screen capture\n"
                 "/status - system status (CPU/RAM/battery)\n"
+                "/shutdown_pc - schedule safe Windows shutdown\n"
+                "/restart_pc - schedule safe Windows restart\n"
                 "/play <query> - play YouTube query\n"
                 "/open <app> - open application (chrome, notepad)\n"
                 "/press <shortcut> - press keyboard shortcut\n"
                 "/desk - scan desk via camera and analyze\n"
                 "/remember <text> - save a memory\n"
-                "/profile - show stored profile and desk items"
+                "/profile - show stored profile and desk items\n"
+                "/dashboard - show the Phase 7 dashboard and orchestration summary\n"
+                "/panic - activate secure stealth mode\n"
+                "/unlock <PIN> - release the security lock"
             )
             self._send_message(chat_id, help_msg)
         elif lower_text.startswith("/remember "):
@@ -153,6 +283,30 @@ class TelegramRemoteBot:
             else:
                 self._send_message(chat_id, "Please provide something to remember after /remember.")
 
+    def _run_windows_system_command(self, command_name: str, args: list[str]) -> bool:
+        if platform.system() != "Windows":
+            return False
+        try:
+            subprocess.run([command_name, *args], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except Exception:
+            return False
+
+    def get_status(self) -> str:
+        arrow_status = "running" if self.started else "not running"
+        try:
+            from modules.pc_control import get_system_status
+
+            system_status = get_system_status()
+        except Exception as exc:
+            system_status = f"system status unavailable: {exc}"
+        return f"Arrow is {arrow_status}. {system_status}"
+
+    def send_startup_message(self) -> None:
+        if not self.admin_chat_id:
+            return
+        self._send_message(self.admin_chat_id, "Arrow Smart Remote Engine has started successfully.")
+
     def _run(self) -> None:
         while not self.stop_event.is_set():
             try:
@@ -166,10 +320,14 @@ class TelegramRemoteBot:
                 time.sleep(5)
 
     def start(self) -> None:
-        if self.thread.is_alive() or not self.token or self.token == "YOUR_TELEGRAM_BOT_TOKEN":
+        if self.thread.is_alive() or not self.token or self.token == "YOUR_TELEGRAM_BOT_TOKEN" or not self.admin_chat_id:
             return
         self.thread.start()
+        self.started = True
 
     def stop(self) -> None:
         self.stop_event.set()
         self.thread.join(timeout=1)
+
+
+TelegramRemoteBot = SmartRemoteEngine

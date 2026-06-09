@@ -106,7 +106,19 @@ These supporting modules are present in the workspace and represent the broader 
 
 ---
 
-## 3. Roadmap for Future Phases
+## 3. Phase 2: Memory Core Upgrade
+
+### Transition Plan: Simple Chatbot Memory to Multi-Project Blueprint Vault
+- The existing memory layer in `modules/memory.py` has been a lightweight JSON store for preferences and reminders, which is sufficient for short-term chatbot context but not for long-term project planning.
+- The upgraded Memory Core should evolve into a Multi-Project Blueprint Vault that stores:
+  - project identifiers and project names,
+  - core logic and concept definitions,
+  - timestamped brainstorming notes and human ideas,
+  - profile-scoped, local-only persistence in the current Windows user account directory.
+- The new vault uses a SQLite-backed store under the current user profile path, which gives Arrow a durable, indexable memory layer for future project ideas without disturbing existing conversation history.
+- The command path in `main.py` now recognizes project-idea logging requests such as “Arrow, log this idea for the new project …” and writes them into the vault in the background.
+
+### Roadmap for Future Phases
 
 ### Phase 13: Anti-Spoofing Blink Face Core
 - Blueprint:

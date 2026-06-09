@@ -15,6 +15,8 @@ VOICE_LANGUAGE = "en-US"
 TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 # Replace with your own Telegram user ID so only you can control Arrow remotely.
 TELEGRAM_USER_ID = 0
+# Strict admin chat ID for the Smart Remote Engine. Only this chat may execute commands.
+ADMIN_CHAT_ID = 0
 
 # Wi-Fi camera RTSP feed for Arrow's live snapshot.
 CAMERA_RTSP_URL = "rtsp://YOUR_CAMERA_RTSP_URL"
