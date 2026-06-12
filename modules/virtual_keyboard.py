@@ -24,6 +24,9 @@ import shutil
 import os
 from typing import Optional, Tuple, Dict
 
+# Detect headless display environments before importing GUI dependencies.
+HEADLESS = os.environ.get("DISPLAY") is None and sys.platform != "win32"
+
 # Auto-install missing dependencies
 _REQUIRED = {
     "cv2": "opencv-python",
@@ -32,6 +35,8 @@ _REQUIRED = {
 }
 _INSTALL_FAILED = False
 for mod, pkg in _REQUIRED.items():
+    if mod == "pyautogui" and HEADLESS:
+        continue
     try:
         __import__(mod)
     except ImportError:
@@ -45,8 +50,12 @@ for mod, pkg in _REQUIRED.items():
 try:
     import cv2
     import mediapipe as mp
-    import pyautogui
-    _DEPS_OK = True
+    if HEADLESS:
+        pyautogui = None
+        _DEPS_OK = False
+    else:
+        import pyautogui
+        _DEPS_OK = True
 except Exception:
     cv2 = None
     mp = None
@@ -366,10 +375,30 @@ def cleanup_virtual_keyboard() -> None:
         _vk = None
 
 
+def orchestrator_event_hook(event_type: str, payload: Dict[str, object]) -> Dict[str, object]:
+    if event_type == "keyboard.virtual.start":
+        start_virtual_keyboard()
+        return {"status": "started", "event_type": event_type}
+    if event_type == "keyboard.virtual.stop":
+        stop_virtual_keyboard()
+        return {"status": "stopped", "event_type": event_type}
+    return {"status": "ignored", "event_type": event_type}
+
+
+ORCHESTRATOR_PLUGIN = {
+    "name": "virtual_keyboard",
+    "handler": "orchestrator_event_hook",
+    "events": ("keyboard.virtual.start", "keyboard.virtual.stop"),
+    "priority": 11,
+}
+
+
 __all__ = [
     "initialize",
     "start_virtual_keyboard",
     "stop_virtual_keyboard",
     "is_virtual_keyboard_active",
     "cleanup_virtual_keyboard",
+    "orchestrator_event_hook",
+    "ORCHESTRATOR_PLUGIN",
 ]

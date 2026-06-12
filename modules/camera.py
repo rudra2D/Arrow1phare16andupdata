@@ -19,7 +19,10 @@ from typing import Optional
 
 import cv2
 
-import mediapipe as mp
+try:
+    import mediapipe as mp
+except ImportError:  # pragma: no cover
+    mp = None
 
 from config import CAMERA_RTSP_URL
 
@@ -42,10 +45,27 @@ class CameraMonitor:
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True, name="CameraMonitor")
         self.cap: Optional[cv2.VideoCapture] = None
-        self.detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=0.5,
-        )
+        self.detector = self._create_face_detector()
+
+    def _create_face_detector(self):
+        if mp is None:
+            return None
+        try:
+            return mp.solutions.face_detection.FaceDetection(
+                model_selection=0,
+                min_detection_confidence=0.5,
+            )
+        except Exception:
+            try:
+                from mediapipe.tasks.python.vision import face_detection
+
+                options = face_detection.FaceDetectorOptions(
+                    model_selection=0,
+                    min_detection_confidence=0.5,
+                )
+                return face_detection.FaceDetector(options)
+            except Exception:
+                return None
 
     def start(self) -> None:
         if not self.thread.is_alive():
@@ -166,6 +186,10 @@ class CameraMonitor:
                         self._trigger_lock()
 
     def _run(self) -> None:
+        if self.detector is None:
+            self._log("Face detector unavailable; camera monitor disabled.")
+            return
+
         while not self.stop_event.is_set():
             interval = DORMANT_MONITOR_INTERVAL if self.dormant else ACTIVE_MONITOR_INTERVAL
             frame = self._read_frame()

@@ -10,3 +10,6 @@ pillow
 selenium>=4.10.0
 webdriver-manager
 opencv-python
+ultralytics
+supervision
+torch

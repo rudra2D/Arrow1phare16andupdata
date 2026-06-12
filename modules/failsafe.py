@@ -4,7 +4,10 @@ import os
 import threading
 import time
 
-import pyautogui
+try:
+    import pyautogui
+except Exception:  # pragma: no cover
+    pyautogui = None
 
 
 class FailSafe:
@@ -26,6 +29,9 @@ class FailSafe:
 
     def _run(self) -> None:
         while not self.stop_event.is_set():
+            if pyautogui is None:
+                time.sleep(self.interval)
+                continue
             try:
                 x, y = pyautogui.position()
                 if x == self.corner_x and y == self.corner_y:

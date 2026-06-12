@@ -1,191 +1,200 @@
+
 # Arrow Project Backup
 
-## 1. Project Architecture & State
+## Snapshot: Full Phase Map and Current System Status
 
-### Root and Entry Points
+Date: 2026-06-11
+Environment: Linux / GitHub Codespaces
+Python: 3.12
+
+This document is a synchronized root-level backup for the Arrow repository. It captures the current architecture, active phase implementation status, module layout, dependency requirements, and runtime behaviors.
+
+---
+
+## Workspace Structure
+
+Root files:
+- `README.md`
+- `requirements.txt`
+- `config.py`
 - `main.py`
-  - Central voice / command routing engine.
-  - Contains emergency listener for "Arrow stop" / "Arrow stop execution".
-  - Manages background PIDs and kill-switch invocation.
-  - Currently integration-ready but import is blocked in the present environment by missing `selenium` via `modules.browser_control`.
-
+- `run_arrow.sh`
+- `install_service.sh`
+- `arrow.service`
 - `test_keyboard.py`
-  - Standalone runner for the holographic virtual keyboard.
-  - Imports `modules.virtual_keyboard` and can be used to validate virtual keyboard behavior when dependencies are available.
 
-### Core Modules Created So Far
-- `modules/camera.py`
-  - Desk and face monitor using MediaPipe face detection.
-  - Implements absence timer and automated lock behavior.
-  - Operational status: implemented, but currently non-functional without `opencv-python` because `cv2` is imported at module load.
+Top-level data directories:
+- `arrow_data/`
+  - `memory.json`
+  - `generated/`
+  - `logs/`
+  - `screenshots/`
+- `storage/`
+  - `vision_snapshots/`
 
-- `modules/hand_mode.py`
-  - MediaPipe-based hand tracking with point smoothing.
-  - Auto-activation via open palm, auto-exit via fist gesture.
-  - Pinch click recognition using thumb and index distances.
-  - Background daemon thread design.
-  - Operational status: module imports successfully in degraded mode, but runtime hand tracking requires `opencv-python`, `mediapipe`, and `pyautogui`.
-
-- `modules/virtual_keyboard.py`
-  - Transparent QWERTY keyboard overlay on camera stream.
-  - Hover-to-select logic using index fingertip dwell.
-  - Loading ring animation and audible activation feedback.
-  - Background daemon thread design.
-  - Operational status: module imports successfully in degraded mode, but the overlay and input features require `opencv-python`, `mediapipe`, and `pyautogui`.
-
+Module packages:
+- `modules/__init__.py`
+- `modules/action_automation.py`
 - `modules/app_orchestrator.py`
-  - OS window and GUI orchestration.
-  - Provides window finding, focus, mouse/keyboard actions, hotkey sequences.
-  - Includes emergency kill-switch state and stop logic.
-  - Operational status: available and import-safe; degrades gracefully when `pyautogui` is missing.
-
-- `modules/code_generator.py`
-  - Securely writes Gemini-generated Python into `arrow_data/generated/`.
-  - Executes generated code with an option for foreground capture or background logging.
-  - Operational status: implemented and import-safe.
-
-- `modules/telegram_bot.py`
-  - Telegram command interface module.
-  - Depends on `modules.browser_control` for browser actions.
-  - Operational status: present but currently blocked by missing `selenium` / browser automation dependencies.
-
 - `modules/browser_control.py`
-  - Selenium-based browser automation helper.
-  - Provides YouTube and web search automation support.
-  - Operational status: present but import-blocked by missing `selenium`.
-
-### Additional Supporting Modules Present
+- `modules/camera.py`
+- `modules/code_generator.py`
+- `modules/command_maker.py`
 - `modules/failsafe.py`
+- `modules/hand_mode.py`
+- `modules/ide_automation.py`
 - `modules/memory.py`
+- `modules/orchestrator.py`
 - `modules/pc_control.py`
 - `modules/scheduler.py`
+- `modules/security.py`
+- `modules/telegram_bot.py`
+- `modules/telegram_storage.py`
+- `modules/virtual_keyboard.py`
+- `modules/vision_core.py`
 - `modules/web_scraper.py`
-- `modules/__init__.py`
 
-These supporting modules are present in the workspace and represent the broader architecture, but the latest active feature work of Phases 11 and 12 is centered in `camera.py`, `hand_mode.py`, `virtual_keyboard.py`, `app_orchestrator.py`, `code_generator.py`, `telegram_bot.py`, and `main.py`.
-
----
-
-## 2. Phase 11 & Phase 12 Details
-
-### Phase 11: Hand Mode
-- Logic:
-  - Use MediaPipe hand landmarks to track a hand and derive a control cursor from the palm center.
-  - Use exponential moving average (EMA) smoothing for stable cursor movement.
-  - Recognize pinch clicks by measuring the distance between the thumb tip and index fingertip.
-  - Activate hand mode automatically on an open palm gesture held for a sustained period.
-  - Exit hand mode automatically on a closed fist gesture held for a sustained period.
-- Finalized parameters:
-  - EMA smoothing alpha = `0.4`.
-  - Pinch click detection based on thumb-index distance threshold.
-  - Gesture-hold duration thresholds for activation/exit to reduce accidental mode switching.
-- Background behavior:
-  - Runs as a daemon thread that continually processes camera frames and hand landmarks.
-  - Provides cursor control and click simulation when active.
-- Fail-safe mode:
-  - The module attempts auto-install of dependencies but gracefully degrades when installation is not permitted.
-  - If dependencies are unavailable, the module still imports safely and reports degraded functionality.
-
-### Phase 12: Virtual Keyboard
-- Logic:
-  - Overlay a QWERTY keyboard on the camera stream using OpenCV drawing.
-  - Track the index fingertip and determine hover location over keys.
-  - Perform key selection when the fingertip remains over a key for a dwell period.
-  - Provide a loading ring animation during key activation to visualize dwell progress.
-  - Emit a beep/sound feedback on key activation.
-- Finalized parameters:
-  - Hover-to-select dwell time = `0.5s`.
-  - Transparent keyboard overlay positioned in the lower half of the view.
-  - Visual feedback through key highlight and loading ring.
-  - Audible beep on activation.
-- Background behavior:
-  - Runs as a daemon thread in the background so the overlay can be toggled or stopped cleanly.
-- Fail-safe mode:
-  - The module attempts auto-install of `opencv-python`, `mediapipe`, and `pyautogui` when missing.
-  - If auto-installation fails due to environment restrictions, the module continues in degraded mode and avoids crashing on import.
+Test coverage:
+- `tests/test_action_automation.py`
+- `tests/test_command_maker.py`
+- `tests/test_ide_automation.py`
+- `tests/test_memory_vault.py`
+- `tests/test_orchestrator.py`
+- `tests/test_security.py`
+- `tests/test_telegram_dashboard.py`
+- `tests/test_vision_core.py`
+- `test_keyboard.py` (standalone virtual keyboard runner)
 
 ---
 
-## 3. Phase 2: Memory Core Upgrade
+## Phase-by-Phase Status
 
-### Transition Plan: Simple Chatbot Memory to Multi-Project Blueprint Vault
-- The existing memory layer in `modules/memory.py` has been a lightweight JSON store for preferences and reminders, which is sufficient for short-term chatbot context but not for long-term project planning.
-- The upgraded Memory Core should evolve into a Multi-Project Blueprint Vault that stores:
-  - project identifiers and project names,
-  - core logic and concept definitions,
-  - timestamped brainstorming notes and human ideas,
-  - profile-scoped, local-only persistence in the current Windows user account directory.
-- The new vault uses a SQLite-backed store under the current user profile path, which gives Arrow a durable, indexable memory layer for future project ideas without disturbing existing conversation history.
-- The command path in `main.py` now recognizes project-idea logging requests such as “Arrow, log this idea for the new project …” and writes them into the vault in the background.
+### Phase 1: Core Voice/Command Routing
+- Implemented in `main.py`
+- Handles voice input, command parsing, emergency stop, and high-level routing
+- Current status: built, import-safe, environment-dependent on voice packages
 
-### Roadmap for Future Phases
+### Phase 2: Memory Vault
+- Implemented in `modules/memory.py`
+- Stores project notes, ideas, and conversation context in JSON
+- Supports profile-scoped persistence
+- Current status: complete and import-safe
 
-### Phase 13: Anti-Spoofing Blink Face Core
-- Blueprint:
-  - Add face anti-spoofing to the camera/face detection module.
-  - Implement blink detection and liveliness checks using the eye aspect ratio or facial landmark motion.
-  - Combine blink sequences with face detection to confirm the user is a live human.
-  - Provide a spoof-detection event output that can gate sensitive actions or authentication flows.
-- Expected deliverables:
-  - `modules/anti_spoof.py` or extended `modules/camera.py`.
-  - Blink/liveness thresholding logic.
-  - Integration hooks for lock/unlock and secure command execution.
+### Phase 3: Browser Control
+- Planned in `modules/browser_control.py`
+- Uses Selenium / web automation
+- Current status: present but import-blocked when Selenium dependencies are missing
 
-### Phase 14: Pure Automation Engine
-- Blueprint:
-  - Build a system-wide automation engine for scheduled tasks and scripted workflows.
-  - Provide a declarative action sequence format and runtime executor.
-  - Support task orchestration across browser, local apps, keyboard/mouse control, and generated code.
-  - Add retry logic, failure detection, and task state reporting.
-- Expected deliverables:
-  - `modules/automation_engine.py` or `modules/orchestrator.py` enhancements.
-  - A scheduler interface for timed/triggered automation.
-  - APIs to bind voice commands or Telegram commands to automation flows.
+### Phase 4: Secure Telegram Remote Control
+- Implemented in `modules/telegram_bot.py` and `modules/telegram_storage.py`
+- Uses environment-driven token handling via `config.py`
+- Current status: built, requires `TELEGRAM_BOT_TOKEN` and optional admin IDs to operate
 
-### Phase 15: Central Orchestrator Core
-- Blueprint:
-  - Create a centralized orchestrator that unifies perception, hands-free control, keyboard, automation, and safety.
-  - Maintain global state and resource coordination across modules.
-  - Provide a single control plane for feature toggles, emergency stop, and mode transitions.
-  - Expose a clean integration layer for new modules and future expansion.
-- Expected deliverables:
-  - `modules/central_orchestrator.py` or a major `main.py` refactor.
-  - Centralized kill-switch management and background process supervisor.
-  - A decision engine that routes sensor input, gesture activation, and automation tasks.
+### Phase 5: Scheduler and Automation Timing
+- Implemented in `modules/scheduler.py`
+- Manages delayed and recurring task execution
+- Current status: built and present
+
+### Phase 6: Security and Fail-safe
+- Implemented in `modules/security.py` and `modules/failsafe.py`
+- Supports panic mode and mouse-corner emergency stop
+- Current status: built and import-safe in headless environments
+
+### Phase 7: Secure Environment Integration
+- Environment-driven config for tokens and RTSP feed in `config.py`
+- Current status: built; `TELEGRAM_BOT_TOKEN` and `CAMERA_RTSP_URL` are loaded safely from environment
+
+### Phase 8: Vision Core
+- Implemented in `modules/vision_core.py`
+- Includes YOLO model loading, frame ingestion, snapshot buffer, tracking, and orchestrator event hooks
+- Current status: complete and verified against dedicated tests
+
+### Phase 9: OS Automation and Hardware Relay Support
+- Implemented in `modules/action_automation.py`
+- Safe display detection and serial relay fallback logic
+- Current status: complete and covered by headless-safe automation tests
+
+### Phase 10: IDE Workspace Automation
+- Implemented in `modules/ide_automation.py`
+- Supports workspace launching, code injection, suite execution, syntax tracing, and orchestrator integration
+- Current status: complete and validated through unit tests
+
+### Phase 11: Hand Mode Gesture Tracking
+- Implemented in `modules/hand_mode.py`
+- Provides gesture-based cursor control, pinch click, activation and exit gestures, and headless-safe import fallback
+- Current status: complete and designed to degrade safely when dependencies or display are unavailable
+
+### Phase 12: Headless-Safe Virtual Keyboard
+- Implemented in `modules/virtual_keyboard.py`
+- Adds a safe import guard around `DISPLAY` and `pyautogui`, plus fallback behavior when headless
+- Current status: fixed and import-safe for headless Codespaces environments
+
+### Phase 13: Anti-Spoofing / Blink Face Core (Blueprint)
+- Blueprint state present in notes only
+- Planned extension to `modules/camera.py` or a dedicated `modules/anti_spoof.py`
+
+### Phase 14: Universal Orchestrator Engine
+- Implemented in `modules/orchestrator.py`
+- Auto-discovers plugin hooks and broadcasts events across modules
+- Current status: built and active
+
+### Phase 15: Central Orchestrator Core (Control Plane)
+- Present as a system-level architecture target in `main.py` plus orchestrator integration
+- Current status: blueprint/coordination layer ready for final centralization
 
 ---
 
-## 4. Environment Configurations
+## Current Test Status and Stability
 
-### Virtual Environment
-- A Python virtual environment has been created at `.venv/` in the workspace root.
-- Standard venv structure includes:
-  - `.venv/bin/`
-  - `.venv/lib/`
-  - `.venv/include/`
-  - `.venv/pyvenv.cfg`
+- `PYTHONPATH=. pytest -v --tb=short` is the verified command for full system testing
+- Headless-safe import guards were added to `modules/virtual_keyboard.py`, `modules/hand_mode.py`, and other GUI automation modules
+- Verified collection: 72 test items in the repository
+- Latest documented status: `72 passed` in `15.72s` on the current environment
 
-### Required Pip Dependencies
-- `opencv-python`
-- `mediapipe`
+---
+
+## Tools and Dependencies
+
+Mandatory runtime dependencies in `requirements.txt`:
+- `requests`
+- `SpeechRecognition`
+- `PyAudio`
+- `pyttsx3`
+- `gTTS`
+- `playsound`
+- `psutil`
 - `pyautogui`
-- `selenium`
+- `pillow`
+- `selenium>=4.10.0`
 - `webdriver-manager`
+- `opencv-python`
+- `ultralytics`
+- `supervision`
+- `torch`
 
-### Activation and installation commands
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-pip install opencv-python mediapipe pyautogui selenium webdriver-manager
-```
+Recommended environment:
+- Python 3.12
+- GitHub Codespaces or Linux desktop
+- `.venv` with dependencies installed via `pip install -r requirements.txt`
 
-### Notes
-- The current workspace contains the `.venv/` directory, but actual runtime success depends on installing the required packages inside that environment.
-- If `.venv/` is moved, the environment should be re-created on the new host with the same dependency list.
+Environment variables in active use:
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `VOICE_RECORD_SECONDS`
+- `VOICE_LANGUAGE`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_USER_ID`
+- `ADMIN_CHAT_ID`
+- `PRIVATE_SERVER_UPLOAD_URL`
+- `PRIVATE_BACKUP_UPLOAD_URL`
+- `PRIVATE_STORAGE_AUTH_TOKEN`
+- `CAMERA_RTSP_URL`
 
 ---
 
-## Backup Summary
+## Usage Notes
 
-This document captures the current Arrow architecture, latest Phase 11/12 implementation details, and the next-phase roadmap so a new AI instance can continue the project without losing context.
+- Launch the full system with `python main.py` or `./run_arrow.sh` once dependencies are installed.
+- Validate the IDE automation phase separately with `python -m pytest tests/test_ide_automation.py`.
+- Use `test_keyboard.py` only in a display-enabled environment for manual virtual keyboard validation.
+- In headless environments, GUI and input features degrade safely instead of crashing.

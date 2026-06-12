@@ -18,12 +18,15 @@ import threading
 import time
 from typing import Optional
 
+HEADLESS = os.environ.get("DISPLAY") is None and sys.platform != "win32"
+
 # Auto-install missing dependencies
 _REQUIRED_PACKAGES = {
     "cv2": "opencv-python",
     "mediapipe": "mediapipe",
-    "pyautogui": "pyautogui",
 }
+if not HEADLESS:
+    _REQUIRED_PACKAGES["pyautogui"] = "pyautogui"
 
 _INSTALL_FAILED = False
 for module_name, package_name in _REQUIRED_PACKAGES.items():
@@ -40,8 +43,11 @@ for module_name, package_name in _REQUIRED_PACKAGES.items():
 try:
     import cv2
     import mediapipe as mp
-    import pyautogui
-    _DEPS_OK = True
+    if HEADLESS:
+        pyautogui = None
+    else:
+        import pyautogui
+    _DEPS_OK = not HEADLESS
 except Exception:
     cv2 = None
     mp = None

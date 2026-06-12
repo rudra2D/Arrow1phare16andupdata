@@ -1,14 +1,21 @@
 """PC control utilities for Arrow."""
 
+import os
 import platform
 import re
 import subprocess
+import sys
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 
 import psutil
-import pyautogui
+
+HEADLESS = os.environ.get("DISPLAY") is None and sys.platform != "win32"
+try:
+    import pyautogui
+except Exception:
+    pyautogui = None
 
 
 SCREENSHOT_DIR = Path("arrow_data/screenshots")
@@ -73,6 +80,8 @@ def take_screenshot() -> str:
     """Take a screenshot and save it to the screenshots folder."""
     filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
     path = SCREENSHOT_DIR / filename
+    if pyautogui is None or HEADLESS:
+        raise RuntimeError("Screenshot unavailable in headless mode or when pyautogui is not installed")
     image = pyautogui.screenshot()
     image.save(path)
     return str(path)
